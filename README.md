@@ -20,7 +20,7 @@ With this tool, you can monitor the files or url with its options, and you will 
 ```
 git clone https://github.com/Mpty-slk/wchanged.git
 cd wchanged
-python3 wchanged.py -h
+python3 changes.py -h
 ```
 2. Install the required `requests` library:
 ```
@@ -28,19 +28,19 @@ pip install requests
 ```
 ## Usage
 ### Monitor a Single File
-``` python3 wchanged.py -f path/to/yourfile.txt ```
+``` python3 changes.py -f path/to/yourfile.txt ```
 
 ### Monitor Multiple Files
-``` python3 wchanged.py -fl path/to/yourfile1.txt path/to/yourfile2.txt ```
+``` python3 changes.py -fl path/to/yourfile1.txt path/to/yourfile2.txt ```
 
 ### Monitor a File from a URL
-``` python3 wchanged.py -u http://example.com/yourfile.html ```
+``` python3 changes.py -u http://example.com/yourfile.html ```
 
 ### Specify a Custom Log File
-``` python3 wchanged.py -f path/to/yourfile.txt -l custom_log_file.log ```
+``` python3 changes.py -f path/to/yourfile.txt -l custom_log_file.log ```
 
 ### Specify a Custom Check Interval
-``` python3 wchanged.py -f path/to/yourfile.txt -t 30 ```
+``` python3 changes.py -f path/to/yourfile.txt -t 30 ```
 
 ### Complete Example
-``` python3 wchanged.py -u http://example.com/yourfile.html -l custom_log_file.log -t 20 ```
+``` python3 changes.py -u http://example.com/yourfile.html -l custom_log_file.log -t 20 ```
