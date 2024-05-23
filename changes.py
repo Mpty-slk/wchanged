@@ -55,7 +55,7 @@ def analyze_file(filename, log_filename, interval):
             if current_hash is None:
                 print(f'{filename} does not exist or cannot be read.')
             else:
-                print(f'{filename} has been changed!')
+                print(f'{filename} has been changed! LogFile -> {log_filename}')
 
                 if previous_content is not None and current_content is not None:
                     diff = list(difflib.ndiff(previous_content, current_content))
@@ -89,7 +89,7 @@ def analyze_url(url, log_filename, interval):
             if current_hash is None:
                 print(f'{url} does not exist or cannot be read.')
             else:
-                print(f'{url} has been changed!')
+                print(f'{url} has been changed! LogFile -> {log_filename}')
 
                 if previous_content is not None and current_content is not None:
                     diff = list(difflib.ndiff(previous_content, current_content))
