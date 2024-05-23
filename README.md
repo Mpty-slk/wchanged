@@ -31,16 +31,16 @@ pip install requests
 ``` python3 wchanged.py -f path/to/yourfile.txt ```
 
 ### Monitor Multiple Files
-``` python wchanged.py -fl path/to/yourfile1.txt path/to/yourfile2.txt ```
+``` python3 wchanged.py -fl path/to/yourfile1.txt path/to/yourfile2.txt ```
 
 ### Monitor a File from a URL
-``` python wchanged.py -u http://example.com/yourfile.html ```
+``` python3 wchanged.py -u http://example.com/yourfile.html ```
 
 ### Specify a Custom Log File
-``` python wchanged.py -f path/to/yourfile.txt -l custom_log_file.log ```
+``` python3 wchanged.py -f path/to/yourfile.txt -l custom_log_file.log ```
 
 ### Specify a Custom Check Interval
-``` python wchanged.py -f path/to/yourfile.txt -t 30 ```
+``` python3 wchanged.py -f path/to/yourfile.txt -t 30 ```
 
 ### Complete Example
-``` python wchanged.py -u http://example.com/yourfile.html -l custom_log_file.log -t 20 ```
+``` python3 wchanged.py -u http://example.com/yourfile.html -l custom_log_file.log -t 20 ```
