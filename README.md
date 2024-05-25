@@ -26,6 +26,11 @@ python3 wchanged.py -h
 ```
 pip install requests
 ```
+3. Config .env File 
+```
+TELEGRAM_BOT_TOKEN=TOKEN-BOT
+TELEGRAM_CHAT_ID=CHAT-ID
+```
 ## Usage
 ### Monitor a Single File
 ``` python3 wchanged.py -f path/to/yourfile.txt ```

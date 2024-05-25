@@ -4,6 +4,25 @@ import difflib
 import datetime
 import argparse
 import requests
+from decouple import config
+
+
+# Load Telegram bot token and chat ID from environment variables or .env file
+TELEGRAM_BOT_TOKEN = config('TELEGRAM_BOT_TOKEN')
+TELEGRAM_CHAT_ID = config('TELEGRAM_CHAT_ID')
+
+def send_telegram_message(message):
+    """Send a message to the Telegram bot."""
+    url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage'
+    payload = {
+        'chat_id': TELEGRAM_CHAT_ID,
+        'text': message
+    }
+    try:
+        response = requests.post(url, data=payload)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        print(f"Failed to send message to Telegram: {e}")
 
 def get_file_hash(filename):
     """Generate an MD5 hash for the contents of the given file."""
@@ -34,13 +53,19 @@ def read_file_content(filename):
         return None
 
 def log_changes(log_filename, identifier, changes):
-    """Log the changes to a log file."""
+    """Log the changes to a log file and send to Telegram."""
     with open(log_filename, 'a') as log_file:
         timestamp = datetime.datetime.now().isoformat()
         log_file.write(f'[{timestamp}] {identifier} has been changed!\n')
+        change_message = f'[{timestamp}] {identifier} has been changed!\n'
         for line_num, line_content, change_type in changes:
             log_file.write(f'{change_type} line {line_num}: {line_content}\n')
+            change_message += f'{change_type} line {line_num}: {line_content}\n'
         log_file.write('\n' + '-'*40 + '\n')
+        change_message += '\n[!] Finished\n'
+        
+        # Send change message to Telegram
+        send_telegram_message(change_message)
 
 def analyze_file(filename, log_filename, interval):
     """Analyze the given file for changes."""
