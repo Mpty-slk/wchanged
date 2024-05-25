@@ -13,7 +13,7 @@ With this tool, you can monitor the files or url with its options, and you will 
 ## Requirements
 
 - Python 3.x
-- `requests` library (for URL monitoring)
+- `requests` and `decouple` libraries
 
 ## Installation
 1. Clone the repository:
@@ -22,9 +22,10 @@ git clone https://github.com/Mpty-slk/wchanged.git
 cd wchanged
 python3 changes.py -h
 ```
-2. Install the required `requests` library:
+2. Install the required `requests`,`decouple` library:
 ```
 pip install requests
+pip install python-decouple
 ```
 3. Config .env File 
 ```
