@@ -1,52 +1,52 @@
-# wchanged
-
-**Analyze your file**
-
-With this tool, you can monitor the files or url with its options, and you will be notified when the developer makes a change in it.
+# File and URL Change Monitor
+This project is a Python script for monitoring changes in local files or URLs. It logs any detected changes and sends notifications with the changes to a specified Telegram chat.
 
 ## Features
-- Monitor a single file or multiple files for changes.
-- Monitor a file from a URL for changes.
-- Log changes with timestamps and detailed line differences.
-- Customizable check intervals (default is 1 minute).
+* Monitors specified files and URLs for any content changes.
+* Logs changes in a file and sends the log as a document to a Telegram bot.
+* Utilizes multithreading to monitor multiple files and URLs concurrently.
+* Supports configurable check intervals and logging.
 
 ## Requirements
+* Python 3.8+
+* Dependencies: Install the necessary packages by running:
+`pip install python-decouple requests`
+* Telegram Bot Setup: You will need a Telegram bot and a chat ID to receive notifications.
 
-- Python 3.x
-- `requests` and `decouple` libraries
+## Configuration
+1. Environment Variables: Set up a .env file in the root directory of your project to securely store your Telegram bot credentials. The .env file should contain:
+```
+TELEGRAM_BOT_TOKEN=<your_bot_token>
+TELEGRAM_CHAT_ID=<your_chat_id>
+```
+2. Configuration File: Create a configuration file (e.g., config.txt) that lists each file path or URL you want to monitor, one per line.
 
-## Installation
-1. Clone the repository:
-```
-git clone https://github.com/Mpty-slk/wchanged.git
-cd wchanged
-python3 changes.py -h
-```
-2. Install the required `requests`,`decouple` library:
-```
-pip install requests
-pip install python-decouple
-```
-3. Config .env File 
-```
-TELEGRAM_BOT_TOKEN=TOKEN-BOT
-TELEGRAM_CHAT_ID=CHAT-ID
-```
+Example config.txt:
+`
+/path/to/local/file_to_monitor.txt
+https://exmaple.com/file_to_monitor.html
+https://example.com/file_to_monitor.txt
+`
+
 ## Usage
-### Monitor a Single File
-``` python3 changes.py -f path/to/yourfile.txt ```
+To run the script, use the following command:
+`python3 changes.py -c config.txt -l changes.log -t 60`
 
-### Monitor Multiple Files
-``` python3 changes.py -fl path/to/yourfile1.txt path/to/yourfile2.txt ```
 
-### Monitor a File from a URL
-``` python3 changes.py -u http://example.com/yourfile.html ```
+## Command-Line Arguments
+* `-c` or `--config`: Required. The path to the configuration file listing the files or URLs to monitor.
 
-### Specify a Custom Log File
-``` python3 changes.py -f path/to/yourfile.txt -l custom_log_file.log ```
+* `-l` or `--log`: The path to the log file where changes will be saved. Default: changes.log.
 
-### Specify a Custom Check Interval
-``` python3 changes.py -f path/to/yourfile.txt -t 30 ```
+* `-t` or `--interval`: Time interval (in seconds) between checks for changes. Default: 60.
 
-### Complete Example
-``` python3 changes.py -u http://example.com/yourfile.html -l custom_log_file.log -t 20 ```
+
+## How It Works
+1. File Monitoring: The script computes an MD5 hash of the file contents at regular intervals. If a change is detected, it logs the details in the specified log file and sends the log as a document to the Telegram chat.
+
+2. URL Monitoring: Similarly, for each URL, it downloads the content, computes its hash, and checks for changes.
+
+3. Telegram Notification: Upon detecting any changes, a summary log file is sent to the specified Telegram chat.
+
+
+

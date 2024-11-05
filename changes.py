@@ -4,15 +4,18 @@ import difflib
 import datetime
 import argparse
 import requests
+import threading
+import random
+import string
+import os
 from decouple import config
-
 
 # Load Telegram bot token and chat ID from environment variables or .env file
 TELEGRAM_BOT_TOKEN = config('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = config('TELEGRAM_CHAT_ID')
 
 def send_telegram_message(message):
-    """Send a message to the Telegram bot."""
+    """Send a simple text message to the Telegram bot."""
     url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage'
     payload = {
         'chat_id': TELEGRAM_CHAT_ID,
@@ -23,6 +26,23 @@ def send_telegram_message(message):
         response.raise_for_status()
     except requests.RequestException as e:
         print(f"Failed to send message to Telegram: {e}")
+
+def send_telegram_document(document_path):
+    """Send a document to the Telegram bot and delete it after sending."""
+    url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument'
+    with open(document_path, 'rb') as document:
+        files = {'document': document}
+        data = {'chat_id': TELEGRAM_CHAT_ID}
+        try:
+            response = requests.post(url, data=data, files=files)
+            response.raise_for_status()
+            print(f"Document sent to Telegram: {document_path}")
+        except requests.RequestException as e:
+            print(f"Failed to send document to Telegram: {e}")
+        finally:
+            # Delete the file after sending
+            os.remove(document_path)
+            print(f"Document deleted after sending: {document_path}")
 
 def get_file_hash(filename):
     """Generate an MD5 hash for the contents of the given file."""
@@ -53,19 +73,35 @@ def read_file_content(filename):
         return None
 
 def log_changes(log_filename, identifier, changes):
-    """Log the changes to a log file and send to Telegram."""
-    with open(log_filename, 'a') as log_file:
-        timestamp = datetime.datetime.now().isoformat()
+    """Log the changes to a log file and send them to Telegram as a document."""
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Parse domain and path for URLs, or use filename directly for files
+    if identifier.startswith("http://") or identifier.startswith("https://"):
+        # Extract domain and path from URL
+        domain = identifier.split("//")[1].split("/")[0]
+        path = identifier.split(domain)[1].replace("/", "_")
+    else:
+        # For local files, use the identifier as the "domain+path"
+        domain = "localfile"
+        path = identifier.replace("/", "_").replace(":", "_")
+
+    # Combine into desired filename format: domain+path+timestamp.txt
+    change_log_path = f'{domain}{path}_{timestamp}.txt'
+    
+    # Write changes to log file and temporary change log
+    with open(log_filename, 'a') as log_file, open(change_log_path, 'w') as change_log_file:
         log_file.write(f'[{timestamp}] {identifier} has been changed!\n')
-        change_message = f'[{timestamp}] {identifier} has been changed!\n'
+        
+        change_log_file.write(f'[{timestamp}] Changes in {identifier}:\n')
         for line_num, line_content, change_type in changes:
             log_file.write(f'{change_type} line {line_num}: {line_content}\n')
-            change_message += f'{change_type} line {line_num}: {line_content}\n'
+            change_log_file.write(f'{change_type} line {line_num}: {line_content}\n')
         log_file.write('\n' + '-'*40 + '\n')
-        change_message += '\n[!] Finished\n'
-        
-        # Send change message to Telegram
-        send_telegram_message(change_message)
+        change_log_file.write('\n[!] Finished\n')
+    
+    # Send the change log file as a document to Telegram and delete it
+    send_telegram_document(change_log_path)
 
 def analyze_file(filename, log_filename, interval):
     """Analyze the given file for changes."""
@@ -138,28 +174,41 @@ def analyze_url(url, log_filename, interval):
         time.sleep(interval)
 
 def main():
-    parser = argparse.ArgumentParser(description="Monitor files for changes.")
-    parser.add_argument('-f', '--file', type=str, help="File to monitor.")
-    parser.add_argument('-fl', '--filelist', type=str, nargs='+', help="List of files to monitor.")
-    parser.add_argument('-u', '--url', type=str, help="URL of the file to monitor.")
+    parser = argparse.ArgumentParser(description="Monitor files and URLs for changes.")
+    parser.add_argument('-c', '--config', type=str, required=True, help="Configuration file containing list of files or URLs to monitor.")
     parser.add_argument('-l', '--log', type=str, default='changes.log', help="Log file to save changes.")
-    parser.add_argument('-t', '--interval', type=int, default=60, help="Time interval between checks (in seconds). Default is 60 seconds (1 minute).")
+    parser.add_argument('-t', '--interval', type=int, default=60, help="Default time interval between checks (in seconds).")
     args = parser.parse_args()
 
-    files_to_monitor = []
-    if args.file:
-        files_to_monitor.append(args.file)
-    if args.filelist:
-        files_to_monitor.extend(args.filelist)
+    # Read configuration file
+    try:
+        with open(args.config, 'r') as config_file:
+            items_to_monitor = config_file.readlines()
+    except FileNotFoundError:
+        print(f"Configuration file '{args.config}' not found.")
+        return
 
-    if args.url:
-        analyze_url(args.url, args.log, args.interval)
-    elif files_to_monitor:
-        for filename in files_to_monitor:
-            # Start a separate monitoring loop for each file
-            analyze_file(filename, args.log, args.interval)
-    else:
-        print("No files or URLs provided to monitor. Use -f, -fl, or -u to specify files or URLs.")
+    # Strip whitespace from each line
+    items_to_monitor = [line.strip() for line in items_to_monitor if line.strip()]
+
+    # Start monitoring each file or URL in a separate thread
+    threads = []
+    for item in items_to_monitor:
+        if item.startswith('http://') or item.startswith('https://'):
+            # If item is a URL, start a new thread to monitor it
+            print(f"Monitoring URL: {item}")
+            thread = threading.Thread(target=analyze_url, args=(item, args.log, args.interval))
+        else:
+            # If item is a file path, start a new thread to monitor it
+            print(f"Monitoring File: {item}")
+            thread = threading.Thread(target=analyze_file, args=(item, args.log, args.interval))
+        
+        thread.start()
+        threads.append(thread)
+
+    # Wait for all threads to complete (they won't, as each monitoring loop runs indefinitely)
+    for thread in threads:
+        thread.join()
 
 if __name__ == "__main__":
     main()
