@@ -22,15 +22,15 @@ TELEGRAM_CHAT_ID=<your_chat_id>
 2. Configuration File: Create a configuration file (e.g., config.txt) that lists each file path or URL you want to monitor, one per line.
 
 Example config.txt:
-`
+```
 /path/to/local/file_to_monitor.txt
 https://exmaple.com/file_to_monitor.html
 https://example.com/file_to_monitor.txt
-`
+```
 
 ## Usage
 To run the script, use the following command:
-`python3 changes.py -c config.txt -l changes.log -t 60`
+```python3 changes.py -c config.txt -l changes.log -t 60```
 
 
 ## Command-Line Arguments
