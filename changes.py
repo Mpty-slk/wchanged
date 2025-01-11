@@ -1,31 +1,35 @@
 import hashlib
 import time
-import difflib
 import datetime
 import argparse
 import requests
 import threading
-import random
-import string
 import os
-from decouple import config
+import re
+from dotenv import load_dotenv
+from urllib.parse import urlparse, urljoin
+from pathlib import Path
 
-# Load Telegram bot token and chat ID from environment variables or .env file
-TELEGRAM_BOT_TOKEN = config('TELEGRAM_BOT_TOKEN')
-TELEGRAM_CHAT_ID = config('TELEGRAM_CHAT_ID')
+# Load environment variables
+load_dotenv()
+
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+
+if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    raise ValueError("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set in the environment variables.")
+
 
 def send_telegram_message(message):
     """Send a simple text message to the Telegram bot."""
     url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage'
-    payload = {
-        'chat_id': TELEGRAM_CHAT_ID,
-        'text': message
-    }
+    payload = {'chat_id': TELEGRAM_CHAT_ID, 'text': message}
     try:
         response = requests.post(url, data=payload)
         response.raise_for_status()
     except requests.RequestException as e:
         print(f"Failed to send message to Telegram: {e}")
+
 
 def send_telegram_document(document_path):
     """Send a document to the Telegram bot and delete it after sending."""
@@ -40,147 +44,138 @@ def send_telegram_document(document_path):
         except requests.RequestException as e:
             print(f"Failed to send document to Telegram: {e}")
         finally:
-            # Delete the file after sending
             os.remove(document_path)
             print(f"Document deleted after sending: {document_path}")
 
-def get_file_hash(filename):
-    """Generate an MD5 hash for the contents of the given file."""
-    try:
-        with open(filename, 'rb') as f:
-            file_hash = hashlib.md5()
-            while chunk := f.read(8192):
-                file_hash.update(chunk)
-            return file_hash.hexdigest()
-    except FileNotFoundError:
-        return None
 
 def get_url_hash(url):
     """Generate an MD5 hash for the contents of the file at the given URL."""
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=10)
         response.raise_for_status()
         return hashlib.md5(response.content).hexdigest(), response.text.splitlines()
-    except requests.RequestException:
+    except requests.RequestException as e:
+        print(f"Error fetching URL {url}: {e}")
         return None, None
 
-def read_file_content(filename):
-    """Read the contents of the file and return as a list of lines."""
-    try:
-        with open(filename, 'r') as f:
-            return f.readlines()
-    except FileNotFoundError:
-        return None
 
-def log_changes(log_filename, identifier, changes):
-    """Log the changes to a log file and send them to Telegram as a document."""
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    # Parse domain and path for URLs, or use filename directly for files
-    if identifier.startswith("http://") or identifier.startswith("https://"):
-        # Extract domain and path from URL
-        domain = identifier.split("//")[1].split("/")[0]
-        path = identifier.split(domain)[1].replace("/", "_")
-    else:
-        # For local files, use the identifier as the "domain+path"
-        domain = "localfile"
-        path = identifier.replace("/", "_").replace(":", "_")
+def extract_js_files(html_content):
+    """
+    Extract all JavaScript file paths from HTML content, including those
+    in comments, concatenated strings, and unquoted text.
+    """
+    js_regex = r"""
+        (?i)                              # Case-insensitive match
+        (?:
+            [\"']                        # Match opening quotes (optional)
+        )?
+        ([^\"'\s<>]+\.js(?:\?[^\"'\s<>]*)?)  # Match .js files, including query strings
+        (?:
+            [\"']                        # Match closing quotes (optional)
+        )?
+    """
+    return re.findall(js_regex, html_content, re.VERBOSE)
 
-    # Combine into desired filename format: domain+path+timestamp.txt
-    change_log_path = f'{domain}{path}_{timestamp}.txt'
-    
-    # Write changes to log file and temporary change log
-    with open(log_filename, 'a') as log_file, open(change_log_path, 'w') as change_log_file:
-        log_file.write(f'[{timestamp}] {identifier} has been changed!\n')
-        
-        change_log_file.write(f'[{timestamp}] Changes in {identifier}:\n')
-        for line_num, line_content, change_type in changes:
-            log_file.write(f'{change_type} line {line_num}: {line_content}\n')
-            change_log_file.write(f'{change_type} line {line_num}: {line_content}\n')
-        log_file.write('\n' + '-'*40 + '\n')
-        change_log_file.write('\n[!] Finished\n')
-    
-    # Send the change log file as a document to Telegram and delete it
-    send_telegram_document(change_log_path)
 
-def analyze_file(filename, log_filename, interval):
-    """Analyze the given file for changes."""
-    previous_hash = get_file_hash(filename)
-    previous_content = read_file_content(filename)
+def get_line_number(html_content, js_file):
+    """Find the line number of a JS file in the HTML content."""
+    for i, line in enumerate(html_content, start=1):
+        if js_file in line:
+            return i
+    return None  # File not found
+
+
+def thread_safe_write(log_filename, log_entry):
+    """Thread-safe way to write log entries to a file."""
+    with threading.Lock():
+        with open(log_filename, 'a') as log_file:
+            log_file.write(log_entry)
+
+
+
+def analyze_js_files(base_url, js_files, log_filename, interval):
+    """Monitor a list of JavaScript files for changes."""
+    previous_files = {}  # Store JS file paths with their line numbers
 
     while True:
-        current_hash = get_file_hash(filename)
-        current_content = read_file_content(filename)
-        
-        if current_hash != previous_hash:
-            if current_hash is None:
-                print(f'{filename} does not exist or cannot be read.')
-            else:
-                print(f'{filename} has been changed! LogFile -> {log_filename}')
+        _, html_content = get_url_hash(base_url)
+        if not html_content:
+            print(f"Failed to retrieve content from {base_url}. Retrying in {interval} seconds...")
+            time.sleep(interval)
+            continue
 
-                if previous_content is not None and current_content is not None:
-                    diff = list(difflib.ndiff(previous_content, current_content))
-                    changes = []
-                    line_num = 0
+        # Extract current JS files and their line numbers
+        current_files = {
+            js_file: get_line_number(html_content, js_file)
+            for js_file in extract_js_files("\n".join(html_content))
+        }
 
-                    for line in diff:
-                        if line.startswith('+ '):
-                            changes.append((line_num + 1, line[2:].strip(), '[+]'))
-                        elif line.startswith('- '):
-                            changes.append((line_num + 1, line[2:].strip(), '[-]'))
-                        if not line.startswith('- '):
-                            line_num += 1
+        # Remove invalid entries (files without a valid line number)
+        current_files = {js_file: line for js_file, line in current_files.items() if line}
 
-                    if changes:
-                        log_changes(log_filename, filename, changes)
-                    
-                previous_content = current_content
-            previous_hash = current_hash
-            
+        # Compare current files with previously tracked files
+        added_files = {k: v for k, v in current_files.items() if k not in previous_files}
+        removed_files = {k: v for k, v in previous_files.items() if k not in current_files}
+
+        # If there are changes, log them
+        if added_files or removed_files:
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            log_entry = f"{timestamp} {base_url}\n"
+
+            # Collect changes grouped by line number
+            all_changes = []
+
+            # Add removed files
+            for js_file, line in removed_files.items():
+                all_changes.append((line, f"[-] line {line}: {js_file}"))
+
+            # Add added files
+            for js_file, line in added_files.items():
+                all_changes.append((line, f"[+] line {line}: {js_file}"))
+
+            # Sort changes by line number
+            all_changes.sort(key=lambda x: x[0])
+
+            # Write changes to the log
+            for _, change in all_changes:
+                log_entry += f"{change}\n"
+
+            log_entry += "\n[!] Finished\n"
+
+            # Write the log entry to the temp file
+            with open(log_filename, 'w') as log_file:
+                log_file.write(log_entry)
+
+            # Send the log file to Telegram
+            send_telegram_document(log_filename)
+
+        # Update previous_files with current_files
+        previous_files = current_files
         time.sleep(interval)
 
-def analyze_url(url, log_filename, interval):
-    """Analyze the file at the given URL for changes."""
-    previous_hash, previous_content = get_url_hash(url)
 
-    while True:
-        current_hash, current_content = get_url_hash(url)
-        
-        if current_hash != previous_hash:
-            if current_hash is None:
-                print(f'{url} does not exist or cannot be read.')
-            else:
-                print(f'{url} has been changed! LogFile -> {log_filename}')
 
-                if previous_content is not None and current_content is not None:
-                    diff = list(difflib.ndiff(previous_content, current_content))
-                    changes = []
-                    line_num = 0
+def analyze_url_with_js_extraction(url, log_filename, interval):
+    """Analyze the URL, extract JS files from HTML, and monitor them for changes."""
+    _, html_content = get_url_hash(url)
+    if not html_content:
+        print(f"Failed to retrieve content from {url}.")
+        return
+    js_files = extract_js_files("\n".join(html_content))
+    if not js_files:
+        print(f"No JavaScript files found in {url}.")
+        return
+    print(f"Extracted JavaScript files from {url}: {js_files}")
+    analyze_js_files(url, js_files, log_filename, interval)
 
-                    for line in diff:
-                        if line.startswith('+ '):
-                            changes.append((line_num + 1, line[2:].strip(), '[+]'))
-                        elif line.startswith('- '):
-                            changes.append((line_num + 1, line[2:].strip(), '[-]'))
-                        if not line.startswith('- '):
-                            line_num += 1
-
-                    if changes:
-                        log_changes(log_filename, url, changes)
-                    
-                previous_content = current_content
-            previous_hash = current_hash
-            
-        time.sleep(interval)
 
 def main():
     parser = argparse.ArgumentParser(description="Monitor files and URLs for changes.")
     parser.add_argument('-c', '--config', type=str, required=True, help="Configuration file containing list of files or URLs to monitor.")
-    parser.add_argument('-l', '--log', type=str, default='changes.log', help="Log file to save changes.")
-    parser.add_argument('-t', '--interval', type=int, default=60, help="Default time interval between checks (in seconds).")
+    parser.add_argument('-t', '--interval', type=int, default=60, help="Time interval between checks (in seconds).")
+    parser.add_argument('--jjs', action='store_true', help="Extract JavaScript files from HTML and monitor them for changes.")
     args = parser.parse_args()
 
-    # Read configuration file
     try:
         with open(args.config, 'r') as config_file:
             items_to_monitor = config_file.readlines()
@@ -188,27 +183,28 @@ def main():
         print(f"Configuration file '{args.config}' not found.")
         return
 
-    # Strip whitespace from each line
     items_to_monitor = [line.strip() for line in items_to_monitor if line.strip()]
-
-    # Start monitoring each file or URL in a separate thread
     threads = []
     for item in items_to_monitor:
         if item.startswith('http://') or item.startswith('https://'):
-            # If item is a URL, start a new thread to monitor it
-            print(f"Monitoring URL: {item}")
-            thread = threading.Thread(target=analyze_url, args=(item, args.log, args.interval))
+            if args.jjs:
+                print(f"Extracting and monitoring JavaScript files from URL: {item}")
+                # Generate log filename dynamically (e.g., based on the URL)
+                log_filename = f"log_{item.split('//')[1].replace('/', '_')}.txt"
+                thread = threading.Thread(target=analyze_url_with_js_extraction, args=(item, log_filename, args.interval))
+            else:
+                print(f"Monitoring URL: {item}")
+                thread = threading.Thread(target=analyze_js_files, args=(item, [], generate_log_filename(item), args.interval))
         else:
-            # If item is a file path, start a new thread to monitor it
             print(f"Monitoring File: {item}")
             thread = threading.Thread(target=analyze_file, args=(item, args.log, args.interval))
-        
         thread.start()
         threads.append(thread)
 
-    # Wait for all threads to complete (they won't, as each monitoring loop runs indefinitely)
     for thread in threads:
         thread.join()
+
+
 
 if __name__ == "__main__":
     main()
