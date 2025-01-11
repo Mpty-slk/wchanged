@@ -51,7 +51,7 @@ pip install requests python-dotenv
 2. **Run the Script**: You can run the script with the following command:
 
    ```bash
-   python monitor.py -c config.txt -t 60 --jjs
+   python changes.py -c config.txt -t 60 --jjs
    ```
 
    **Arguments**:
